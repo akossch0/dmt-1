@@ -169,3 +169,8 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+
+# large data files
+2025_01_Gener_BicingNou_INFORMACIO.csv
+2025_01_Gener_BicingNou_ESTACIONS.csv
