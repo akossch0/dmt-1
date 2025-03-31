@@ -1,29 +1,30 @@
 -- This SQL script creates the tables needed for the project.
 
--- population table
-CREATE TABLE population (
+-- populations table
+CREATE TABLE populations (
     id INTEGER PRIMARY KEY,
     administrative_unit_id INTEGER,
-    reference_date TEXT,
-    district_code TEXT,
-    district_name TEXT,
-    neighbourhood_code TEXT,
-    neighbourhood_name TEXT,
-    census_tract_code TEXT,
-    number_of_inhabitants INTEGER
+    reference_date VARCHAR,
+    district_code VARCHAR,
+    district_name VARCHAR,
+    neighbourhood_code VARCHAR,
+    neighbourhood_name VARCHAR,
+    census_tract_code VARCHAR,
+    number_of_inhabitants INTEGER,
+    FOREIGN KEY (administrative_unit_id) REFERENCES administrative_units(id)
 );
 
 -- administrative_units table
 CREATE TABLE administrative_units (
     id INTEGER PRIMARY KEY,
-    population_id INTEGER,
-    unit_type TEXT,
-    district_code TEXT,
-    neighbourhood_code TEXT,
-    census_tract_code TEXT,
-    unit_name TEXT,
+    unit_type VARCHAR,
+    district_code VARCHAR,
+    neighbourhood_code VARCHAR,
+    census_tract_code VARCHAR,
+    unit_name VARCHAR,
     perimeter DOUBLE PRECISION,
     area DOUBLE PRECISION,
-    scale_range TEXT,
-    geometry geometry(Polygon,4326)
+    scale_range VARCHAR,
+    geometry geometry(Polygon,4326),
 );
+
