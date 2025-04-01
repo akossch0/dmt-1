@@ -7,7 +7,7 @@ CREATE TABLE income (
     Nom_Districte VARCHAR(255) NOT NULL,
     Codi_Barri INT NOT NULL,
     Nom_Barri VARCHAR(255) NOT NULL,
-    Seccio_Censal INT NOT NULL,
+    Seccio_Censal VARCHAR NOT NULL,
     Import_Euros FLOAT NOT NULL,
     CONSTRAINT pk_income PRIMARY KEY (_Any, Seccio_Censal)
 );
