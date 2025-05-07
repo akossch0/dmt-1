@@ -9,3 +9,8 @@ shapely==2.0.7
 scikit-learn==1.6.1
 scipy==1.15.2
 plotly==6.0.1
+tqdm==4.67.1
+py7zr==0.22.0
+psycopg2-binary==2.9.10
+SQLAlchemy==2.0.40
+GeoAlchemy2==0.17.1

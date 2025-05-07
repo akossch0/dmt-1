@@ -172,6 +172,9 @@ cython_debug/
 
 
 # large data files
-2025_01_Gener_BicingNou_INFORMACIO.csv
-2025_01_Gener_BicingNou_ESTACIONS.csv
 .qodo
+
+data/bicycle_stations/*
+data/bicycle_lanes/*
+*.zip
+*.7z
