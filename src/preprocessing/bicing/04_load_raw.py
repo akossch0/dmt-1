@@ -222,7 +222,7 @@ if __name__ == "__main__":
 
     # # 1. Bicycle lanes (Geo)
     # load_geospatial_lanes(
-    #     folder=BASE_PATH / "bicycle_lanes/decompressed",
+    #     folder=BASE_PATH / "bicycle_lanes/projected",
     #     table_name="bicycle_lanes_raw",
     #     engine=engine,
     #     filter_years=filter_years
@@ -230,7 +230,7 @@ if __name__ == "__main__":
 
     # 2. Station Information
     load_csv_to_postgres_optimized(
-        folder=BASE_PATH / "bicycle_stations/information/decompressed",
+        folder=BASE_PATH / "bicycle_stations/information/projected",
         table_name="bicycle_station_information_raw",
         engine=engine,
         filter_years=filter_years
@@ -238,7 +238,7 @@ if __name__ == "__main__":
 
     # # 3. Station Status
     # load_csv_to_postgres(
-    #     folder=BASE_PATH / "bicycle_stations/stations/decompressed",
+    #     folder=BASE_PATH / "bicycle_stations/stations/projected",
     #     table_name="bicycle_station_status_raw",
     #     engine=engine,
     #     filter_years=filter_years
