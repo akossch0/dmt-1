@@ -1,9 +1,6 @@
 import logging
 import psycopg2
-from sqlalchemy import create_engine, text
-from tqdm import tqdm
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List
 
 DB_PARAMS = {
     "host": "dtim.essi.upc.edu",
@@ -104,11 +101,6 @@ def analyze_missing_values(clean_table: str, needed_columns: List[str]):
 
 
 def clean_data_with_cte(source_table: str, clean_table: str):
-    """
-    Clean the data using a single SQL query with CTEs to:
-    1. Convert data types
-    2. Handle missing values
-    """
     log.info("Cleaning data with CTE approach")
     
     # Check timestamp format
@@ -122,12 +114,7 @@ def clean_data_with_cte(source_table: str, clean_table: str):
     else:
         ts_expr = 'CAST("last_updated" AS TIMESTAMP)'
     
-    # Drop existing table if it exists
     execute_sql(f"DROP TABLE IF EXISTS {clean_table}")
-    
-    # Comprehensive CTE-based query that:
-    # 1. Converts data types
-    # 2. Handles missing values
     
     log.info("Building and executing comprehensive cleaning query...")
     sql_clean = f"""
@@ -261,7 +248,6 @@ def clean_bicing_station_information():
     source_table = "bicycle_station_information_raw"
     clean_table = "bicycle_station_information_clean"
     
-    # Define the columns we need
     needed_columns = ["station_id", "name", "lat", "lon", "altitude", "capacity", "last_updated"]
     
     # Step 1: Clean the data with CTEs
@@ -470,7 +456,6 @@ def clean_bicing_station_status():
     
     log.info(f"Cleaning complete for station status. Final table: {clean_table}")
     
-    # Get final row count
     final_count = execute_sql(f"SELECT COUNT(*) FROM {clean_table}", fetch=True)[0][0]
     
     return {
@@ -480,14 +465,12 @@ def clean_bicing_station_status():
 
 
 if __name__ == "__main__":
-    # Run the full cleaning process for both information and status
     log.info("===== CLEANING STATION INFORMATION =====")
     info_results = clean_bicing_station_information()
     
     log.info("\n===== CLEANING STATION STATUS =====")
     status_results = clean_bicing_station_status()
     
-    # Print summary
     log.info("\n===== DATA CLEANING SUMMARY =====")
     
     if 'error' in info_results:

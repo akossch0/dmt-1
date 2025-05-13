@@ -1,15 +1,12 @@
 import csv
 import logging
-import os
 from pathlib import Path
 from tqdm import tqdm
 from datetime import datetime
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-# Paths
 BASE_PATH = Path("data")
 
 

@@ -42,13 +42,6 @@ def load_geospatial_lanes(folder: Path, table_name: str, engine, filter_years: O
     log.debug("\n".join([str(file) for file in files]))
 
     for file in tqdm(files, desc=f"Loading lanes to {table_name}"):
-        # print columns and their data types
-        # print(f"Columns and data types for {file}:")
-        # gdf = gpd.read_file(file)
-        # print(gdf.dtypes)
-        # # print the first row
-        # print(gdf.head())
-        # break
         try:
             gdf: gpd.GeoDataFrame = gpd.read_file(file)
             gdf = gdf.to_crs(epsg=4326)
