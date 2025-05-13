@@ -60,27 +60,6 @@ def load_geospatial_lanes(folder: Path, table_name: str, engine, filter_years: O
             tqdm.write(f"[ERROR] {file}: {e}")
 
 
-def load_csv_to_postgres(folder: Path, table_name: str, engine, filter_years: Optional[range] = None):
-    files = list(folder.glob("**/*.csv"))
-    
-    if filter_years:
-        filtered_files = []
-        for file in files:
-            if any(str(year) in file.name for year in filter_years):
-                filtered_files.append(file)
-        files = filtered_files
-    
-    tqdm.write(f"Loading {len(files)} files matching filter criteria")
-
-    for i, file in enumerate(tqdm(files, desc=f"Loading CSVs to {table_name}")):
-        try:
-            for j, chunk in tqdm(enumerate(pd.read_csv(file, chunksize=CHUNKSIZE)), desc=f"Loading {file}"):
-                if_exists = 'replace' if i == 0 and j == 0 else 'append'
-                chunk.to_sql(table_name, engine, if_exists=if_exists, index=False, method='multi')
-        except Exception as e:
-            tqdm.write(f"[ERROR] Failed to load {file}: {e}")
-
-
 def load_csv_to_postgres_optimized(folder: Path, table_name: str, engine, filter_years: Optional[range] = None):
     files = list(folder.glob("**/*.csv"))
     if filter_years:
@@ -108,7 +87,6 @@ def load_csv_to_postgres_optimized(folder: Path, table_name: str, engine, filter
     
     # Create table with all text columns to avoid type issues
     with engine.connect() as conn:
-        # Drop table if exists
         conn.execute(text(f"DROP TABLE IF EXISTS {table_name}"))
         
         # Create table with all columns as text
@@ -220,26 +198,26 @@ if __name__ == "__main__":
     # Define years to filter, similar to download.py
     filter_years = range(2019, 2022)
 
-    # # 1. Bicycle lanes (Geo)
-    # load_geospatial_lanes(
-    #     folder=BASE_PATH / "bicycle_lanes/projected",
-    #     table_name="bicycle_lanes_raw",
-    #     engine=engine,
-    #     filter_years=filter_years
-    # )
+    # 1. Bicycle lanes (Geo)
+    load_geospatial_lanes(
+        folder=BASE_PATH / "bicycle_lanes/projected",
+        table_name="bicycle_lanes_raw",
+        engine=engine,
+        filter_years=filter_years
+    )
 
     # 2. Station Information
     load_csv_to_postgres_optimized(
-        folder=BASE_PATH / "bicycle_stations/information/projected",
+        folder=BASE_PATH / "bicycle_stations/information/sampled",
         table_name="bicycle_station_information_raw",
         engine=engine,
         filter_years=filter_years
     )
 
-    # # 3. Station Status
-    # load_csv_to_postgres(
-    #     folder=BASE_PATH / "bicycle_stations/stations/projected",
-    #     table_name="bicycle_station_status_raw",
-    #     engine=engine,
-    #     filter_years=filter_years
-    # )
+    # 3. Station Status
+    load_csv_to_postgres_optimized(
+        folder=BASE_PATH / "bicycle_stations/status/sampled",
+        table_name="bicycle_station_status_raw",
+        engine=engine,
+        filter_years=filter_years
+    )

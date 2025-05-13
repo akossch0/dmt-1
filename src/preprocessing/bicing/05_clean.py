@@ -5,7 +5,6 @@ from tqdm import tqdm
 from pathlib import Path
 from typing import Dict, List, Optional
 
-# Use same DB parameters as in load_raw.py
 DB_PARAMS = {
     "host": "dtim.essi.upc.edu",
     "port": 5432,
@@ -104,14 +103,13 @@ def analyze_missing_values(clean_table: str, needed_columns: List[str]):
     return missing_stats
 
 
-def clean_data_with_cte(source_table: str, clean_table: str, window_minutes: int = 1440):
+def clean_data_with_cte(source_table: str, clean_table: str):
     """
     Clean the data using a single SQL query with CTEs to:
-    1. Sample the data to one record per station per time window
-    2. Convert data types
-    3. Select only needed columns
+    1. Convert data types
+    2. Handle missing values
     """
-    log.info(f"Cleaning data with CTE approach, window size: {window_minutes} minutes")
+    log.info("Cleaning data with CTE approach")
     
     # Check timestamp format
     ts_format = get_timestamp_format(source_table)
@@ -120,31 +118,16 @@ def clean_data_with_cte(source_table: str, clean_table: str, window_minutes: int
     
     # Define timestamp conversion expression based on format
     if ts_format == 'unix':
-        ts_expr = 'TO_TIMESTAMP(CAST("last_updated" AS BIGINT))'
-        date_expr = 'TO_TIMESTAMP(CAST("last_updated" AS BIGINT))::DATE'
+        ts_expr = 'TO_TIMESTAMP(CAST(CAST("last_updated" AS NUMERIC) AS BIGINT))'
     else:
         ts_expr = 'CAST("last_updated" AS TIMESTAMP)'
-        date_expr = 'CAST("last_updated" AS DATE)'
-    
-    # Define window expression based on minutes
-    if window_minutes == 1440:  # Daily
-        window_expr = date_expr
-        log.info("Using daily time buckets")
-    elif window_minutes == 60:  # Hourly
-        window_expr = f"date_trunc('hour', {ts_expr})"
-        log.info("Using hourly time buckets")
-    else:  # Custom minutes
-        window_expr = f"date_trunc('hour', {ts_expr}) + INTERVAL '{window_minutes} minutes' * (EXTRACT(MINUTE FROM {ts_expr}) / {window_minutes})::integer"
-        log.info(f"Using {window_minutes} minute time buckets")
     
     # Drop existing table if it exists
     execute_sql(f"DROP TABLE IF EXISTS {clean_table}")
     
     # Comprehensive CTE-based query that:
     # 1. Converts data types
-    # 2. Creates time buckets
-    # 3. Samples data to one record per station per time bucket
-    # 4. Performs any needed imputations
+    # 2. Handles missing values
     
     log.info("Building and executing comprehensive cleaning query...")
     sql_clean = f"""
@@ -156,40 +139,31 @@ def clean_data_with_cte(source_table: str, clean_table: str, window_minutes: int
             CAST("station_id" AS INTEGER) AS station_id,
             "name"::TEXT AS name,
             CASE 
+                WHEN "lat" = 'NA' THEN NULL
                 WHEN "lat" ~ '^-?[0-9]+(\.[0-9]+)?$' THEN CAST("lat" AS NUMERIC)
                 ELSE NULL
             END AS lat,
             CASE 
+                WHEN "lon" = 'NA' THEN NULL
                 WHEN "lon" ~ '^-?[0-9]+(\.[0-9]+)?$' THEN CAST("lon" AS NUMERIC)
                 ELSE NULL 
             END AS lon,
             CASE 
+                WHEN "altitude" = 'NA' THEN NULL
                 WHEN "altitude" ~ '^-?[0-9]+(\.[0-9]+)?$' THEN CAST("altitude" AS NUMERIC)
                 ELSE NULL
             END AS altitude,
             CASE 
+                WHEN "capacity" = 'NA' THEN NULL
                 WHEN "capacity" ~ '^[0-9]+$' THEN CAST("capacity" AS INTEGER)
                 ELSE NULL
             END AS capacity,
-            {ts_expr} AS last_updated,
-            {window_expr} AS time_bucket
+            CASE
+                WHEN "last_updated" = 'NA' THEN NULL
+                ELSE {ts_expr}
+            END AS last_updated
         FROM {source_table}
-        WHERE "last_updated" IS NOT NULL
-    ),
-    
-    -- Step 2: Select distinct records (one per station per time bucket)
-    sampled AS (
-        SELECT DISTINCT ON (station_id, time_bucket)
-            station_id,
-            name,
-            lat,
-            lon,
-            altitude,
-            capacity,
-            last_updated,
-            time_bucket
-        FROM converted
-        ORDER BY station_id, time_bucket, last_updated
+        WHERE "last_updated" IS NOT NULL AND "last_updated" != 'NA'
     )
     
     -- Final selection
@@ -200,9 +174,8 @@ def clean_data_with_cte(source_table: str, clean_table: str, window_minutes: int
         lon,
         altitude,
         capacity,
-        last_updated,
-        time_bucket
-    FROM sampled
+        last_updated
+    FROM converted
     """
     
     execute_sql(sql_clean)
@@ -210,11 +183,6 @@ def clean_data_with_cte(source_table: str, clean_table: str, window_minutes: int
     # Count rows
     row_count = execute_sql(f"SELECT COUNT(*) FROM {clean_table}", fetch=True)[0][0]
     log.info(f"Created clean table with {row_count:,} rows")
-    
-    # Create indexes
-    log.info("Creating indexes...")
-    execute_sql(f"CREATE INDEX idx_{clean_table}_station_id ON {clean_table}(station_id)")
-    execute_sql(f"CREATE INDEX idx_{clean_table}_time ON {clean_table}(time_bucket)")
     
     return {'table': clean_table, 'rows': row_count}
 
@@ -263,8 +231,7 @@ def impute_missing_values_cte(table_name: str, needs_imputation: bool):
         t.lon,
         COALESCE(t.altitude, a.median_altitude) AS altitude,
         COALESCE(t.capacity, c.mode_capacity) AS capacity,
-        t.last_updated,
-        t.time_bucket
+        t.last_updated
     FROM {table_name} t
     LEFT JOIN altitude_medians a ON t.station_id = a.station_id
     LEFT JOIN capacity_modes c ON t.station_id = c.station_id
@@ -274,7 +241,7 @@ def impute_missing_values_cte(table_name: str, needs_imputation: bool):
     
     # Create indexes
     execute_sql(f"CREATE INDEX idx_{imputed_table}_station_id ON {imputed_table}(station_id)")
-    execute_sql(f"CREATE INDEX idx_{imputed_table}_time ON {imputed_table}(time_bucket)")
+    execute_sql(f"CREATE INDEX idx_{imputed_table}_time ON {imputed_table}(last_updated)")
     
     # Check imputation results
     result = execute_sql(f"""
@@ -297,9 +264,9 @@ def clean_bicing_station_information():
     # Define the columns we need
     needed_columns = ["station_id", "name", "lat", "lon", "altitude", "capacity", "last_updated"]
     
-    # Step 1: Clean and sample the data with CTEs
+    # Step 1: Clean the data with CTEs
     log.info("Step 1: Cleaning data with CTE approach")
-    clean_result = clean_data_with_cte(source_table, "temp_clean_table", window_minutes=1440)
+    clean_result = clean_data_with_cte(source_table, "temp_clean_table")
     
     if 'error' in clean_result:
         log.error(f"Error in cleaning: {clean_result['error']}")
@@ -341,15 +308,194 @@ def clean_bicing_station_information():
     }
 
 
+def clean_bicing_station_status():
+    """Master function to clean bicycle station status data using CTEs."""
+    source_table = "bicycle_station_status_raw"
+    clean_table = "bicycle_station_status_clean"
+    
+    # Define the columns we need
+    needed_columns = ["station_id", "num_bikes_available", "num_bikes_available_types.mechanical", 
+                      "num_bikes_available_types.ebike", "num_docks_available", "last_reported", 
+                      "status", "last_updated"]
+    
+    # Step 1: Clean the data with CTEs
+    log.info("Step 1: Cleaning status data with CTE approach")
+    
+    # Check timestamp format for last_updated
+    ts_format = get_timestamp_format(source_table)
+    if not ts_format:
+        return {'error': 'Could not determine timestamp format'}
+    
+    # Define timestamp conversion expressions based on format
+    if ts_format == 'unix':
+        # Handle scientific notation (e.g. "1.578e+09") by first casting to numeric
+        last_updated_expr = 'TO_TIMESTAMP(CAST(CAST("last_updated" AS NUMERIC) AS BIGINT))'
+        last_reported_expr = 'TO_TIMESTAMP(CAST(CAST("last_reported" AS NUMERIC) AS BIGINT))'
+    else:
+        last_updated_expr = 'CAST("last_updated" AS TIMESTAMP)'
+        last_reported_expr = 'CAST("last_reported" AS TIMESTAMP)'
+    
+    # Drop existing table if it exists
+    execute_sql(f"DROP TABLE IF EXISTS temp_clean_status")
+    
+    # Comprehensive CTE-based query for status data
+    log.info("Building and executing comprehensive cleaning query for status data...")
+    sql_clean = f"""
+    CREATE TABLE temp_clean_status AS
+    WITH 
+    -- Step 1: Convert raw data types
+    converted AS (
+        SELECT 
+            CAST("station_id" AS INTEGER) AS station_id,
+            CASE 
+                WHEN "num_bikes_available" = 'NA' THEN NULL
+                WHEN "num_bikes_available" ~ '^[0-9]+$' THEN CAST("num_bikes_available" AS INTEGER)
+                ELSE NULL
+            END AS num_bikes_available,
+            CASE 
+                WHEN "num_bikes_available_types.mechanical" = 'NA' THEN NULL
+                WHEN "num_bikes_available_types.mechanical" ~ '^[0-9]+$' THEN CAST("num_bikes_available_types.mechanical" AS INTEGER)
+                ELSE NULL
+            END AS mechanical_bikes,
+            CASE 
+                WHEN "num_bikes_available_types.ebike" = 'NA' THEN NULL
+                WHEN "num_bikes_available_types.ebike" ~ '^[0-9]+$' THEN CAST("num_bikes_available_types.ebike" AS INTEGER)
+                ELSE NULL
+            END AS ebikes,
+            CASE 
+                WHEN "num_docks_available" = 'NA' THEN NULL
+                WHEN "num_docks_available" ~ '^[0-9]+$' THEN CAST("num_docks_available" AS INTEGER)
+                ELSE NULL
+            END AS num_docks_available,
+            CASE
+                WHEN "last_reported" = 'NA' THEN NULL
+                ELSE {last_reported_expr}
+            END AS last_reported,
+            CASE
+                WHEN "status" = 'NA' THEN NULL
+                ELSE "status"::TEXT
+            END AS status,
+            CASE
+                WHEN "last_updated" = 'NA' THEN NULL
+                ELSE {last_updated_expr}
+            END AS last_updated
+        FROM {source_table}
+        WHERE "last_updated" IS NOT NULL AND "last_updated" != 'NA'
+    )
+    
+    -- Final selection
+    SELECT 
+        station_id,
+        num_bikes_available,
+        mechanical_bikes,
+        ebikes,
+        num_docks_available,
+        last_reported,
+        status,
+        last_updated
+    FROM converted
+    """
+    
+    execute_sql(sql_clean)
+    
+    # Count rows
+    row_count = execute_sql(f"SELECT COUNT(*) FROM temp_clean_status", fetch=True)[0][0]
+    log.info(f"Created temp clean status table with {row_count:,} rows")
+    
+    # Step 2: Analyze missing values
+    log.info("Step 2: Analyzing missing values in status data")
+    status_columns = ["station_id", "num_bikes_available", "mechanical_bikes", "ebikes", 
+                       "num_docks_available", "last_reported", "status", "last_updated"]
+    
+    missing_stats = analyze_missing_values("temp_clean_status", status_columns)
+    
+    # Step 3: Impute if needed
+    log.info("Step 3: Handling missing values in status data")
+    
+    # Check if we need imputation (>0.1% missing in any important column)
+    needs_imputation = False
+    imputation_columns = ["num_bikes_available", "mechanical_bikes", "ebikes", "num_docks_available"]
+    
+    for column, stats in missing_stats.items():
+        if stats['missing_percentage'] > 0.1 and column in imputation_columns:
+            log.warning(f"Column '{column}' has {stats['missing_percentage']}% missing values")
+            needs_imputation = True
+    
+    if needs_imputation:
+        log.info("Imputing missing values for station status data...")
+        execute_sql(f"DROP TABLE IF EXISTS {clean_table}")
+        
+        # Impute missing values with a CTE approach
+        sql_impute = f"""
+        CREATE TABLE {clean_table} AS
+        WITH 
+        -- Calculate median num_bikes_available per station
+        bike_medians AS (
+            SELECT 
+                station_id,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY num_bikes_available) AS median_bikes,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY mechanical_bikes) AS median_mechanical,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ebikes) AS median_ebikes,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY num_docks_available) AS median_docks
+            FROM temp_clean_status
+            WHERE num_bikes_available IS NOT NULL 
+              OR mechanical_bikes IS NOT NULL 
+              OR ebikes IS NOT NULL 
+              OR num_docks_available IS NOT NULL
+            GROUP BY station_id
+        )
+        
+        -- Join everything together with imputed values
+        SELECT 
+            t.station_id,
+            COALESCE(t.num_bikes_available, b.median_bikes) AS num_bikes_available,
+            COALESCE(t.mechanical_bikes, b.median_mechanical) AS mechanical_bikes,
+            COALESCE(t.ebikes, b.median_ebikes) AS ebikes,
+            COALESCE(t.num_docks_available, b.median_docks) AS num_docks_available,
+            t.last_reported,
+            t.status,
+            t.last_updated
+        FROM temp_clean_status t
+        LEFT JOIN bike_medians b ON t.station_id = b.station_id
+        """
+        
+        execute_sql(sql_impute)
+    else:
+        # If no imputation needed, just rename the table
+        execute_sql(f"DROP TABLE IF EXISTS {clean_table}")
+        execute_sql(f"ALTER TABLE temp_clean_status RENAME TO {clean_table}")
+    
+    # Clean up temporary tables
+    execute_sql("DROP TABLE IF EXISTS temp_clean_status")
+    
+    log.info(f"Cleaning complete for station status. Final table: {clean_table}")
+    
+    # Get final row count
+    final_count = execute_sql(f"SELECT COUNT(*) FROM {clean_table}", fetch=True)[0][0]
+    
+    return {
+        'missing_stats': missing_stats,
+        'final_row_count': final_count
+    }
+
+
 if __name__ == "__main__":
-    # Run the full cleaning process
-    results = clean_bicing_station_information()
+    # Run the full cleaning process for both information and status
+    log.info("===== CLEANING STATION INFORMATION =====")
+    info_results = clean_bicing_station_information()
+    
+    log.info("\n===== CLEANING STATION STATUS =====")
+    status_results = clean_bicing_station_status()
     
     # Print summary
-    log.info("===== DATA CLEANING SUMMARY =====")
-    log.info(f"Missing values analysis complete")
+    log.info("\n===== DATA CLEANING SUMMARY =====")
     
-    if 'error' in results:
-        log.error(f"Cleaning process had errors: {results['error']}")
+    if 'error' in info_results:
+        log.error(f"Station information cleaning had errors: {info_results['error']}")
     else:
-        log.info(f"Final clean table created: bicycle_station_information_clean with {results['final_row_count']:,} rows") 
+        log.info(f"Station information clean table created with {info_results['final_row_count']:,} rows")
+    
+    if 'error' in status_results:
+        log.error(f"Station status cleaning had errors: {status_results['error']}")
+    else:
+        log.info(f"Station status clean table created with {status_results['final_row_count']:,} rows") 
