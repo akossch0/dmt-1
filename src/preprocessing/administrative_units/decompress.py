@@ -1,19 +1,3 @@
-# admin_units_decompress.py
-"""Unpack **only** the *BCN_UNITATS_ADM.zip* archive that lives in
-*data/administrative_units/raw* (ignore any older ZIPs that might be sitting
-next to it).
-
-The archive is extracted into a sibling directory:
-
-```
- data/administrative_units/
-   ├─ raw/BCN_UNITATS_ADM.zip
-   └─ decompressed/BCN_UNITATS_ADM/  <-- here
-```
-"""
-
-from __future__ import annotations
-
 import zipfile
 from pathlib import Path
 
@@ -21,7 +5,7 @@ import py7zr
 from tqdm import tqdm
 
 RAW_ROOT  = Path("data/administrative_units/raw")
-TARGET_ZIP = "BCN_UNITATS_ADM_shp.zip"      # case-insensitive match
+TARGET_ZIP = "BCN_UNITATS_ADM_shp.zip"     
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -58,7 +42,7 @@ def decompress_bcn_units(raw_root: Path = RAW_ROOT, target_name: str = TARGET_ZI
         return
 
     for archive in matches:
-        rel       = archive.relative_to(raw_root)  # e.g. BCN_UNITATS_ADM.zip
+        rel       = archive.relative_to(raw_root)  
         out_dir   = raw_root.parent / "decompressed" / rel.with_suffix("")
 
         if out_dir.exists() and any(out_dir.iterdir()):
