@@ -48,22 +48,34 @@ def clean_income_data(source_table="income_raw", clean_table="income_clean"):
     CREATE TABLE {clean_table} AS
     WITH cleaned AS (
         SELECT
-            LPAD(CAST("codi_districte" AS TEXT), 2, '0') AS codi_districte,
-            CAST("nom_districte" AS TEXT) AS nom_districte,
             LPAD(CAST("codi_barri" AS TEXT), 2, '0') AS codi_barri,
+            CAST("nom_districte" AS TEXT) AS nom_districte,
             CAST("nom_barri" AS TEXT) AS nom_barri,
-            LPAD(CAST("seccio_censal" AS TEXT), 4, '0') AS seccio_censal,
-            CAST("import_euros" AS FLOAT) AS import_euros
+            CAST("any" AS DATE) AS "any",
+            CAST("import_euros" AS FLOAT) AS import_euros,
+            CAST("codi_districte" AS INT) AS codi_districte,
+            CAST("seccio_censal" AS INT) AS seccio_censal
         FROM {source_table}
         WHERE "import_euros" IS NOT NULL
     ),
+    enriched AS (
+        SELECT *,
+            (CAST(codi_districte AS TEXT) || LPAD(CAST(seccio_censal AS TEXT), 3, '0'))::INT AS seccio_censal_concat
+        FROM cleaned
+    ),
     stats AS (
-        SELECT MIN(import_euros) AS min_income, MAX(import_euros) AS max_income FROM cleaned
+        SELECT MIN(import_euros) AS min_income, MAX(import_euros) AS max_income FROM enriched
     )
     SELECT 
-        c.*,
-        ROUND(((c.import_euros - s.min_income) / NULLIF(s.max_income - s.min_income, 0))::NUMERIC, 6) AS income_norm
-    FROM cleaned c CROSS JOIN stats s
+        codi_districte,
+        nom_districte,
+        codi_barri,
+        nom_barri,
+        seccio_censal_concat AS seccio_censal,
+        import_euros,
+        "any",
+        ROUND(((import_euros - s.min_income) / NULLIF(s.max_income - s.min_income, 0))::NUMERIC, 6) AS income_norm
+    FROM enriched CROSS JOIN stats s
     '''
     execute_sql(sql)
 
@@ -78,13 +90,10 @@ def add_geometry_from_geojson(clean_table="income_clean", geojson_path="../../..
     )
 
     gdf = gpd.read_file(geojson_path)
-
-    # Normalize column names and format
     gdf.rename(columns=lambda c: c.lower(), inplace=True)
     gdf = gdf.loc[:, ~gdf.columns.duplicated()]
-    gdf["codi_districte"] = gdf["codi_districte"].astype(str).str.zfill(2)
-    gdf["codi_barri"] = gdf["codi_barri"].astype(str).str.zfill(2)
-    gdf["seccio_censal"] = gdf["seccio_censal"].astype(str).str.zfill(4)
+    gdf["codi_districte"] = gdf["codi_districte"].astype(int)
+    gdf["seccio_censal"] = gdf["seccio_censal"].astype(int)
 
     gdf.to_postgis("income_geometry_temp", engine, if_exists="replace", index=False)
 
@@ -96,7 +105,6 @@ def add_geometry_from_geojson(clean_table="income_clean", geojson_path="../../..
     SET geometry = g.geometry
     FROM income_geometry_temp g
     WHERE income_clean.codi_districte = g.codi_districte
-      AND income_clean.codi_barri = g.codi_barri
       AND income_clean.seccio_censal = g.seccio_censal
     '''
     execute_sql(sql_update)
@@ -110,4 +118,3 @@ def add_geometry_from_geojson(clean_table="income_clean", geojson_path="../../..
 if __name__ == "__main__":
     clean_income_data()
     add_geometry_from_geojson()
-

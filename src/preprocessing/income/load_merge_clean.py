@@ -1,65 +1,66 @@
 
+
 import geopandas as gpd
 import pandas as pd
 import json
-from shapely.geometry import Polygon, shape
+from pathlib import Path
+from shapely.geometry import Polygon
 
 # --- STEP 1: Load and Parse JSON with WKT polygons ---
-# Load the raw JSON with polygon data
 with open("../../../data/income/raw/BarcelonaCiutat_Barris.json", "r", encoding="utf-8") as f:
     barri_data = json.load(f)
 
-# Function to parse WKT-style POLYGON string into Shapely Polygon
 def parse_wkt_polygon(polygon_str):
     cleaned = polygon_str.replace("POLYGON ((", "").replace("))", "")
     coords = [tuple(map(float, point.split())) for point in cleaned.split(", ")]
     return Polygon(coords)
 
-# Build list of records with geometry
 parsed_data = []
 for entry in barri_data:
     try:
         polygon = parse_wkt_polygon(entry["geometria_wgs84"])
         parsed_data.append({
-            "codi_districte": entry["codi_districte"],
+            "codi_districte": str(entry["codi_districte"]).zfill(2),
             "nom_districte": entry["nom_districte"],
-            "codi_barri": entry["codi_barri"],
+            "codi_barri": str(entry["codi_barri"]).zfill(2),
             "nom_barri": entry["nom_barri"],
             "geometry": polygon
         })
     except Exception as e:
         print(f"Error parsing polygon for {entry['nom_barri']}: {e}")
 
-# Create a GeoDataFrame from the parsed data
 gdf = gpd.GeoDataFrame(parsed_data, geometry="geometry", crs="EPSG:4326")
 
-# --- STEP 2: Load and Clean Income Data ---
-income_df = pd.read_csv("../../../data/income/raw/income.csv")
+# --- STEP 2: Load and Concatenate All Income CSVs ---
+raw_path = Path("../../../data/income/raw")
+all_csvs = list(raw_path.glob("income_*.csv"))
+income_df = pd.concat([pd.read_csv(f, sep=",") for f in all_csvs], ignore_index=True)
 
-# Standardize column formats
-income_df['Codi_Districte'] = income_df['Codi_Districte'].astype(str).str.zfill(2)
-income_df['Codi_Barri'] = income_df['Codi_Barri'].astype(str).str.zfill(2)
+# --- STEP 3: Standardize and Join Keys ---
+income_df.columns = income_df.columns.str.lower()
+income_df["any"] = pd.to_datetime(income_df["any"]).dt.strftime("%Y-%m-%d")
+income_df["codi_districte"] = income_df["codi_districte"].astype(int)
+income_df["codi_barri"] = income_df["codi_barri"].astype(str).str.zfill(2)
+income_df["seccio_censal"] = (
+    income_df["codi_districte"].astype(str) +
+    income_df["seccio_censal"].astype(int).astype(str).str.zfill(3)
+).astype(int)
 
-# Drop rows with missing income
-income_df = income_df.dropna(subset=["Import_Euros"])
+# --- STEP 4: Merge ---
+gdf["codi_districte"] = gdf["codi_districte"].astype(int)
+merged = gdf.merge(income_df, on=["codi_districte", "codi_barri"])
 
-# --- STEP 3: Merge Datasets ---
-# Prepare spatial GeoDataFrame for merging
-gdf['codi_districte'] = gdf['codi_districte'].astype(str).str.zfill(2)
-gdf['codi_barri'] = gdf['codi_barri'].astype(str).str.zfill(2)
+# --- STEP 5: Normalize Income ---
+income_min = merged["import_euros"].min()
+income_max = merged["import_euros"].max()
+merged["income_norm"] = (merged["import_euros"] - income_min) / (income_max - income_min)
 
-# Merge on district and neighborhood codes
-merged = gdf.merge(income_df, left_on=['codi_districte', 'codi_barri'],
-                             right_on=['Codi_Districte', 'Codi_Barri'])
+# --- STEP 6: Export Final Data ---
+output_dir = Path("../../../data/income/clean")
+output_dir.mkdir(parents=True, exist_ok=True)
 
-# --- STEP 4: Normalize Income ---
-income_min = merged["Import_Euros"].min()
-income_max = merged["Import_Euros"].max()
-merged["income_norm"] = (merged["Import_Euros"] - income_min) / (income_max - income_min)
+merged.to_file(output_dir / "final_output.geojson", driver="GeoJSON")
+merged.to_csv(output_dir / "final_output.csv", index=False)
 
-# --- STEP 5: Export Final Preprocessed GeoData ---
-merged.to_file("../../../data/income/clean/final_output.geojson", driver="GeoJSON")
-merged.to_csv("../../../data/income/clean/final_output.csv", index=False)
-
-print("Final preprocessed data exported: 'final_output.geojson' and 'final_output.csv'")
+print("✅ Final preprocessed data exported to 'final_output.geojson' and 'final_output.csv'")
 
