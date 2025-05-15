@@ -174,7 +174,7 @@ def clean_data_with_cte(source_table: str, clean_table: str):
     return {'table': clean_table, 'rows': row_count}
 
 
-def impute_missing_values_cte(table_name: str, needs_imputation: bool):
+def impute_missing_values_for_station_information(table_name: str, needs_imputation: bool):
     """
     Impute missing values using a CTE approach, only if needed.
     Returns a new table name with the imputed data.
@@ -271,7 +271,7 @@ def clean_bicing_station_information():
     
     # Step 3: Impute if needed and create final table
     log.info("Step 3: Finalizing clean table")
-    final_table = impute_missing_values_cte("temp_clean_table", needs_imputation)
+    final_table = impute_missing_values_for_station_information("temp_clean_table", needs_imputation)
     
     # Rename the final table to the target name
     if final_table != clean_table:
@@ -464,12 +464,198 @@ def clean_bicing_station_status():
     }
 
 
+def impute_missing_values_for_bicycle_lanes(table_name: str, needs_imputation: bool):
+    """
+    Impute missing values for bicycle lanes data, only if needed.
+    Returns a new table name with the imputed data.
+    """
+    if not needs_imputation:
+        log.info("Skipping imputation for bicycle lanes (no significant missing values)")
+        return table_name
+    
+    log.info("Imputing missing values for bicycle lanes...")
+    imputed_table = f"{table_name}_imputed"
+    execute_sql(f"DROP TABLE IF EXISTS {imputed_table}")
+    
+    sql_impute = f"""
+    CREATE TABLE {imputed_table} AS
+    WITH 
+    -- Calculate most common values per year-trimester combination
+    common_values AS (
+        SELECT 
+            year,
+            trimester,
+            layer_code,
+            sublayer_code,
+            mode() WITHIN GROUP (ORDER BY lane_type) AS most_common_lane_type
+        FROM {table_name}
+        WHERE lane_type IS NOT NULL
+        GROUP BY year, trimester, layer_code, sublayer_code
+    )
+    
+    -- Join everything together with imputed values
+    SELECT 
+        t.month,
+        t.layer_code,
+        t.year,
+        t.trimester,
+        t.sublayer_code,
+        t.lane_id,
+        t.description,
+        t.data_date,
+        t.geometry,
+        COALESCE(t.lane_type, cv.most_common_lane_type, 'unknown') AS lane_type,
+        t.location
+    FROM {table_name} t
+    LEFT JOIN common_values cv ON t.year = cv.year 
+                              AND t.trimester = cv.trimester
+                              AND t.layer_code = cv.layer_code
+                              AND t.sublayer_code = cv.sublayer_code
+    """
+    
+    execute_sql(sql_impute)
+    
+    # Check imputation results
+    result = execute_sql(f"""
+    SELECT 
+        COUNT(*) FILTER (WHERE lane_type IS NULL) AS null_lane_type,
+        COUNT(*) FILTER (WHERE location IS NULL) AS null_location
+    FROM {imputed_table}
+    """, fetch=True)
+    
+    log.info(f"After imputation: {result[0][0]} null lane_type, {result[0][1]} null location")
+    
+    return imputed_table
+
+
+def clean_bicycle_lanes():
+    """Master function to clean bicycle lanes data using CTEs."""
+    source_table = "bicycle_lanes_raw"
+    clean_table = "bicycle_lanes_clean"
+    
+    log.info("Cleaning bicycle lanes data...")
+    
+    # Drop existing table if it exists
+    execute_sql(f"DROP TABLE IF EXISTS temp_clean_lanes")
+    
+    # Comprehensive CTE-based query for cleaning lanes data
+    sql_clean = f"""
+    CREATE TABLE temp_clean_lanes AS
+    WITH 
+    -- Step 1: Convert raw data types
+    converted AS (
+        SELECT 
+            CAST("mes" AS INTEGER) AS month,
+            "codi_capa"::TEXT AS layer_code,
+            CAST("_any" AS INTEGER) AS year,
+            "trimestre"::TEXT AS trimester,
+            "codi_subca"::TEXT AS sublayer_code,
+            "id"::TEXT AS lane_id,
+            "tooltip"::TEXT AS description,
+            CASE
+                WHEN "_timestamp" ~ '^[0-9]{{8}}$' THEN 
+                    TO_DATE("_timestamp", 'YYYYMMDD')
+                ELSE NULL
+            END AS data_date,
+            "geometry" AS geometry,
+            -- Extract lane type from tooltip
+            CASE 
+                WHEN "tooltip" LIKE '%bidireccional%' THEN 'bidirectional'
+                WHEN "tooltip" LIKE '%unidireccional%' THEN 'unidirectional'
+                ELSE 'unknown'
+            END AS lane_type,
+            -- Extract location from tooltip (everything after the lane type)
+            REGEXP_REPLACE(
+                REGEXP_REPLACE("tooltip", 'Carril bici (uni|bi)direccional ', ''),
+                '^- ', ''
+            ) AS location
+        FROM {source_table}
+    )
+    
+    -- Final selection
+    SELECT 
+        month,
+        layer_code,
+        year,
+        trimester,
+        sublayer_code,
+        lane_id,
+        description,
+        data_date,
+        geometry,
+        lane_type,
+        location
+    FROM converted
+    """
+    
+    execute_sql(sql_clean)
+    
+    # Step 2: Analyze missing values
+    log.info("Analyzing missing values in bicycle lanes data...")
+    
+    lanes_columns = ["month", "layer_code", "year", "trimester", "sublayer_code", 
+                    "lane_id", "description", "data_date", "geometry", "lane_type", "location"]
+    
+    missing_stats = analyze_missing_values("temp_clean_lanes", lanes_columns)
+    
+    # Check if we need imputation (>0.1% missing in any important column)
+    needs_imputation = False
+    imputation_columns = ["lane_type", "location", "data_date"]
+    
+    for column, stats in missing_stats.items():
+        if stats['missing_percentage'] > 0.1 and column in imputation_columns:
+            log.warning(f"Column '{column}' has {stats['missing_percentage']}% missing values")
+            needs_imputation = True
+    
+    # Step 3: Impute if needed and create final table
+    log.info("Finalizing clean table for bicycle lanes")
+    final_table = impute_missing_values_for_bicycle_lanes("temp_clean_lanes", needs_imputation)
+    
+    # Rename the final table to the target name
+    if final_table != clean_table:
+        execute_sql(f"DROP TABLE IF EXISTS {clean_table}")
+        execute_sql(f"ALTER TABLE {final_table} RENAME TO {clean_table}")
+        log.info(f"Renamed {final_table} to {clean_table}")
+    
+    # Clean up temporary tables
+    execute_sql("DROP TABLE IF EXISTS temp_clean_lanes")
+    execute_sql("DROP TABLE IF EXISTS temp_clean_lanes_imputed")
+    
+    # Count rows and report statistics
+    row_count = execute_sql(f"SELECT COUNT(*) FROM {clean_table}", fetch=True)[0][0]
+    log.info(f"Created bicycle lanes clean table with {row_count:,} rows")
+    
+    # Get lane type distribution
+    lane_types = execute_sql(f"""
+    SELECT 
+        lane_type, 
+        COUNT(*) as count,
+        ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM {clean_table}), 2) as percentage
+    FROM {clean_table}
+    GROUP BY lane_type
+    ORDER BY count DESC
+    """, fetch=True)
+    
+    log.info("Lane type distribution:")
+    for lane_type, count, percentage in lane_types:
+        log.info(f"  {lane_type}: {count} lanes ({percentage}%)")
+    
+    return {
+        'missing_stats': missing_stats,
+        'final_row_count': row_count,
+        'lane_types': lane_types
+    }
+
+
 if __name__ == "__main__":
     log.info("===== CLEANING STATION INFORMATION =====")
     info_results = clean_bicing_station_information()
     
     log.info("\n===== CLEANING STATION STATUS =====")
     status_results = clean_bicing_station_status()
+    
+    log.info("\n===== CLEANING BICYCLE LANES =====")
+    lanes_results = clean_bicycle_lanes()
     
     log.info("\n===== DATA CLEANING SUMMARY =====")
     
@@ -481,4 +667,7 @@ if __name__ == "__main__":
     if 'error' in status_results:
         log.error(f"Station status cleaning had errors: {status_results['error']}")
     else:
-        log.info(f"Station status clean table created with {status_results['final_row_count']:,} rows") 
+        log.info(f"Station status clean table created with {status_results['final_row_count']:,} rows")
+        
+    if 'lane_types' in lanes_results:
+        log.info(f"Bicycle lanes clean table created with {lanes_results['final_row_count']:,} rows") 

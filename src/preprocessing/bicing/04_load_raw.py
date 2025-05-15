@@ -37,9 +37,19 @@ def load_geospatial_lanes(folder: Path, table_name: str, engine, filter_years: O
             if any(str(year) in file.name for year in filter_years):
                 filtered_files.append(file)
         files = filtered_files
+        
+        # Debug output for each year
+        for year in filter_years:
+            year_files = [f for f in files if str(year) in f.name]
+            log.info(f"Found {len(year_files)} files for year {year}")
 
     log.debug(f"Loading from {len(files)} files:")
     log.debug("\n".join([str(file) for file in files]))
+    
+    # Drop existing table to start fresh
+    with engine.connect() as conn:
+        conn.execute(text(f"DROP TABLE IF EXISTS {table_name}"))
+        conn.commit()
 
     for file in tqdm(files, desc=f"Loading lanes to {table_name}"):
         try:
@@ -48,7 +58,7 @@ def load_geospatial_lanes(folder: Path, table_name: str, engine, filter_years: O
             gdf.rename(columns={gdf.geometry.name: 'geometry'}, inplace=True)
             gdf.rename(columns=lambda x: x.lower(), inplace=True)
             gdf.rename(columns={'any': '_any'}, inplace=True)
-            gdf.to_postgis(table_name, engine, if_exists='replace', index=False)
+            gdf.to_postgis(table_name, engine, if_exists='append', index=False)
         except Exception as e:
             tqdm.write(f"[ERROR] {file}: {e}")
 
@@ -192,14 +202,16 @@ if __name__ == "__main__":
     filter_years = range(2019, 2022)
 
     # 1. Bicycle lanes (Geo)
+    log.info("===== LOADING BICYCLE LANES =====")
     load_geospatial_lanes(
-        folder=BASE_PATH / "bicycle_lanes/projected",
+        folder=BASE_PATH / "bicycle_lanes/decompressed",
         table_name="bicycle_lanes_raw",
         engine=engine,
         filter_years=filter_years
     )
 
     # 2. Station Information
+    log.info("===== LOADING STATION INFORMATION =====")
     load_csv_to_postgres_optimized(
         folder=BASE_PATH / "bicycle_stations/information/sampled",
         table_name="bicycle_station_information_raw",
@@ -208,6 +220,7 @@ if __name__ == "__main__":
     )
 
     # 3. Station Status
+    log.info("===== LOADING STATION STATUS =====")
     load_csv_to_postgres_optimized(
         folder=BASE_PATH / "bicycle_stations/status/sampled",
         table_name="bicycle_station_status_raw",
