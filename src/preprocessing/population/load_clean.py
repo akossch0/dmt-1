@@ -2,11 +2,11 @@ import logging
 import os
 from pathlib import Path
 
-import geopandas as gpd
+import pandas as pd
 from sqlalchemy import create_engine
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Configuration  ─ adjust as needed
+# Configuration 
 # ────────────────────────────────────────────────────────────────────────────────
 DB_PARAMS: dict[str, str | int] = {
     "host": "dtim.essi.upc.edu",
@@ -20,21 +20,10 @@ BASE_DIR: Path | str = (
     r"C:\Users\andre\Documents\Data Science\Master in Data Science\Second Year\Second Semester\Subjects\Data Management for Transportation\Projects\Project 2\dmt-1"
 )
 
-KM2_CONVERSION = 1e6
-TARGET_CRS = 4326
+POP_RAW_TABLE   = "population_raw"
+POP_CLEAN_TABLE = "population_clean"
 
-RAW_TABLES = {
-    "districts_raw": "districts_clean",
-    "neighbourhoods_raw": "neighbourhoods_clean",
-    "census_tracts_raw": "census_tracts_clean",
-}
-
-# columns to keep for each target table
-COLUMNS = {
-    "districts_clean": ["districte", "nom", "area", "geometry"],
-    "neighbourhoods_clean": ["districte", "barri", "nom", "area", "geometry"],
-    "census_tracts_clean": ["districte", "barri", "sec_cens", "area", "geometry"],
-}
+POP_COLUMNS = ["data_referencia", "seccio_censal", "valor"]
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -48,38 +37,29 @@ def get_engine():
     return create_engine(url)
 
 
-def missing_summary(gdf: gpd.GeoDataFrame, name: str = "") -> None:
-    nan = gdf.isna().sum()
-    pct = (nan / len(gdf) * 100).round(2)
+def missing_summary(df: pd.DataFrame, name: str = "") -> None:
+    nan = df.isna().sum()
+    pct = (nan / len(df) * 100).round(2)
     header = f"Missing values — {name}" if name else "Missing values"
     print("\n" + header)
     print("=" * len(header))
-    for col in gdf.columns:
+    for col in df.columns:
         print(f"{col:15}: {nan[col]:4}  ({pct[col]:5.2f}%)")
 
 
-def clean_gdf(gdf: gpd.GeoDataFrame, cols: list[str]) -> gpd.GeoDataFrame:
-    gdf = gdf[cols]
-    if "area" in gdf.columns:
-        gdf["area"] = gdf["area"] / KM2_CONVERSION
+def upload_population_clean(engine, if_exists: str = "replace") -> None:
+    logger.info("Reading raw population table: %s", POP_RAW_TABLE)
+    df = pd.read_sql(f"SELECT * FROM {POP_RAW_TABLE}", con=engine)
 
-    # standardise geometry name & CRS, lower-case
-    if gdf.geometry.name != "geometry":
-        gdf = gdf.rename_geometry("geometry")
-    if gdf.crs is not None and gdf.crs.to_epsg() != TARGET_CRS:
-        gdf = gdf.to_crs(epsg=TARGET_CRS)
-    gdf.rename(columns=lambda c: c.lower(), inplace=True)
+    # keep just the requested columns, lower-case them
+    df = df[POP_COLUMNS]
+    df.columns = df.columns.str.lower()
 
-    # ─── NEW: build composite census-tract code ────────────────────────────────
-    if {"districte", "sec_cens"}.issubset(gdf.columns):
-        gdf["sec_cens"] = (
-            gdf["districte"].astype(str).str.lstrip("0")  
-            + gdf["sec_cens"].astype(str)).astype(int)               
-        
-    # ───────────────────────────────────────────────────────────────────────────
+    missing_summary(df, POP_CLEAN_TABLE)
 
-    return gdf
-
+    logger.info("→ Loading %s (%d rows) into PostGIS", POP_CLEAN_TABLE, len(df))
+    df.to_sql(POP_CLEAN_TABLE, engine, if_exists=if_exists, index=False)
+    logger.info("   Done.")
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Main routine
@@ -90,29 +70,13 @@ logger.setLevel(logging.INFO)
 logging.basicConfig(format="%(levelname)s: %(message)s")
 
 
-def main(base_dir: Path | str = BASE_DIR, if_exists: str = "replace", tables: list[str] | None = None) -> None:
+def main(base_dir: Path | str = BASE_DIR, if_exists: str = "replace") -> None:
     base_dir = Path(base_dir).expanduser()
     os.chdir(base_dir)
     logger.info("Working directory: %s", Path.cwd())
 
     engine = get_engine()
-
-    targets = tables if tables else RAW_TABLES.keys()
-
-    for raw_table in targets:
-        cleaned_table = RAW_TABLES[raw_table]
-        cols = COLUMNS[cleaned_table]
-
-        logger.info("Reading raw layer: %s", raw_table)
-        gdf = gpd.read_postgis(f'SELECT * FROM {raw_table}', engine, geom_col='geometry')
-
-        gdf_clean = clean_gdf(gdf, cols)
-        missing_summary(gdf_clean, cleaned_table)
-
-        logger.info("→ Loading %s (%d rows) into PostGIS", cleaned_table, len(gdf_clean))
-        gdf_clean.to_postgis(cleaned_table, engine, if_exists=if_exists, index=False)
-        logger.info("   Done.")
-
+    upload_population_clean(engine, if_exists=if_exists)
 
 if __name__ == "__main__":
     main()

@@ -7,8 +7,7 @@ from tqdm import tqdm
 # ─────────── Config ───────────
 DATASET_ID   = "20170706-districtes-barris"
 OUTPUT_DIR   = Path("data/administrative_units/raw")
-# We only want the shapefile package → keep just "shp"
-ALLOWED_FORMATS = {"shp"}                # ← change here
+ALLOWED_FORMATS = {"shp"}                
 # ──────────────────────────────
 
 
