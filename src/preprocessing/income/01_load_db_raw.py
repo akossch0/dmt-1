@@ -14,7 +14,7 @@ DB_PARAMS = {
     "password": "DMT2025!"
 }
 
-BASE_DIR = Path("C:/Users/bruna/OneDrive/Documents/GitHub/dmt-1")
+BASE_DIR = Path(r"C:\Users\andre\Documents\Data Science\Master in Data Science\Second Year\Second Semester\Subjects\Data Management for Transportation\Projects\Project 2\dmt-1")
 DATA_DIR = BASE_DIR / "data/income/raw"
 TARGET_TABLE = "income_raw"
 
