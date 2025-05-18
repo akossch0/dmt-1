@@ -232,6 +232,7 @@ def create_fact_table(engine):
             dim_year y ON EXTRACT(YEAR FROM TO_DATE(p.data_referencia, 'YYYY-MM-DD'))::INT = y.year
         LEFT JOIN
             income_clean i ON p.seccio_censal = CAST(i.seccio_censal AS BIGINT)
+                AND EXTRACT(YEAR FROM TO_DATE(p.data_referencia, 'YYYY-MM-DD'))::INT = EXTRACT(YEAR FROM i."any")::INT
         GROUP BY
             p.seccio_censal, 
             EXTRACT(YEAR FROM TO_DATE(p.data_referencia, 'YYYY-MM-DD'))::INT
