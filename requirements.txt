@@ -14,3 +14,4 @@ py7zr==0.22.0
 psycopg2-binary==2.9.10
 SQLAlchemy==2.0.40
 GeoAlchemy2==0.17.1
+typer==0.15.4
