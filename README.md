@@ -1,17 +1,32 @@
-# Data Management for Transportation - Design and modelling for transportation data
+# Data Management for Transportation - Barcelona Bicing Service
 
-Barcelona Bicing service - Urban infrastructure planning
+Urban infrastructure planning and analysis for Barcelona's Bicing service
 
 ## Project Structure
 
 ```
-├── data/               # Data files (raw, processed, etc.)
-├── src/                # Source code for project
-│   ├── data/           # Scripts for data processing
-│   └── visualization/  # Scripts for data visualization
-├── notebooks/          # Jupyter notebooks
-├── requirements.txt    # Project dependencies
-└── README.md           # Project documentation
+├── data/                       # Data files
+│   ├── administrative_units/   # Barcelona administrative boundaries
+│   ├── bicycle_lanes/          # Bicycle lane network data
+│   ├── bicycle_stations/       # Bicing station data
+│   ├── income/                 # Income data by neighborhood
+│   └── population/             # Population statistics
+├── src/                        # Source code
+│   ├── integration/            # Data integration scripts
+│   ├── kpi/                    # Key Performance Indicators
+│   ├── materialized_views/     # Database view definitions
+│   ├── preprocessing/          # Data preprocessing scripts
+│   ├── utils/                  # Utility functions
+│   └── visualization/          # Visualization modules
+├── notebooks/                  # Jupyter notebooks for analysis
+│   ├── eda_administrative_units.ipynb
+│   ├── eda_bicycle_lanes.ipynb
+│   ├── eda_bicycle_stations.ipynb
+│   ├── eda_neigh_income.ipynb
+│   ├── eda_population.ipynb
+│   └── outputs/                # Notebook outputs
+├── requirements.txt            # Project dependencies
+└── README.md                   # Project documentation
 ```
 
 ## Setup Instructions
@@ -45,8 +60,25 @@ Barcelona Bicing service - Urban infrastructure planning
    pip install -r requirements.txt
    ```
 
-## Usage
+## Project Components
 
-- Put your data files in the `data/` directory
-- Develop your code in the `src/` directory
-- Use `notebooks/` for exploratory data analysis
+### Data Sources
+- Bicycle stations data from Barcelona's Bicing service
+- Bicycle lane network information
+- Administrative boundaries (neighborhoods, districts)
+- Population statistics
+- Income data by neighborhood
+
+### Analysis Notebooks
+- Exploratory data analysis of administrative units
+- Analysis of bicycle lanes network
+- Bicing stations distribution and usage patterns
+- Neighborhood income analysis
+- Population distribution analysis
+
+### Key Dependencies
+- Data manipulation: numpy, pandas, geopandas
+- Visualization: matplotlib, seaborn, plotly, folium, manim, bokeh
+- Geospatial: shapely, contextily
+- Machine learning: scikit-learn, scipy
+- Database: SQLAlchemy, GeoAlchemy2, psycopg2
