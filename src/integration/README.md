@@ -15,7 +15,7 @@ Our integration approach follows these principles:
 
 ## Data Sources & Integration Components
 
-### Demographics Integration (`demographics.py`)
+### Demographics Integration ([`demographics.py`](demographics.py))
 
 This script integrates population and income data with administrative boundaries:
 
@@ -24,43 +24,43 @@ This script integrates population and income data with administrative boundaries
 - Establishes a time dimension hierarchy (`dim_year`, `dim_month`, `dim_day`) to support temporal analysis
 - Produces a fact table (`fact_population_income`) that combines socioeconomic indicators
 
-**Schema Resolution:**
-- Standardizes census tract identifiers across population and income datasets
-- Handles different date formats from various administrative data sources
-- Creates a unified view of demographic data at multiple geographic levels
+**Implementation Details:**
+- Uses SQL operations to join census tracts with neighborhood and district information
+- Creates time dimensions with proper hierarchical relationships
+- Validates schema integrity and referential constraints
 
-### Bicycle Stations Integration (`bicycle_stations.py`)
+### Bicycle Stations Integration ([`bicycle_stations.py`](bicycle_stations.py))
 
 This script integrates bicycle station information and status data:
 
 **Integration Features:**
-- Creates station dimension (`dim_station`) with spatial attributes
-- Establishes fine-grained time hierarchy with hour and ten-minute intervals
+- Creates station dimension (`dim_station`) with station attributes and location
+- Establishes fine-grained time hierarchy with hour and ten-minute intervals in `dim_hour` and `dim_ten_minute`
 - Produces two fact tables:
-  - `fact_station_information`: Captures changes in station metadata over time
-  - `fact_station_status`: Tracks availability of bicycles with high temporal resolution
+  - `fact_station_information`: Captures station metadata over time
+  - `fact_station_status`: Tracks bicycle availability with high temporal resolution
 
-**Schema Resolution:**
-- Handles different timestamp formats between station information and status datasets
-- Standardizes coordinate systems for spatial analysis
-- Creates join relationships between station data and administrative boundaries
+**Implementation Details:**
+- Ensures time dimension hierarchy is complete across all relevant timestamps
+- Performs data validation and integrity checks
+- Creates necessary indexes for query optimization
 
-### Bicycle Lanes Integration (`bicycle_lanes.py`)
+### Bicycle Lanes Integration ([`bicycle_lanes.py`](bicycle_lanes.py))
 
 This script integrates bicycle lane network data with administrative boundaries:
 
 **Integration Features:**
-- Creates a trimester-based time dimension for tracking network changes
-- Produces a series of interconnected fact tables:
+- Creates a trimester-based time dimension (`dim_trimester`) for tracking network changes
+- Produces interconnected fact tables:
   - `fact_bicycle_lane_state`: Captures lane properties at each time period
   - `fact_bike_lane_tract`: Links lanes to census tracts through spatial intersection
   - `fact_bike_network_metrics`: Aggregates network metrics at district and neighborhood levels
   - `fact_bike_tract_metrics`: Provides detailed lane metrics for each census tract
 
-**Schema Resolution:**
-- Handles complex geometries and performs spatial operations to establish relationships
-- Standardizes lane identifiers and categories
-- Creates derived metrics to summarize network characteristics
+**Implementation Details:**
+- Uses spatial operations to calculate lane lengths within census tracts
+- Creates spatial indexes to optimize intersection operations
+- Validates referential integrity of the schema
 
 ## Critical Integration Attributes
 
@@ -94,7 +94,7 @@ The integrated data warehouse supports these analytical queries:
 
 Each integration script follows this common workflow:
 
-1. **Schema Validation**: Verifies source data structure and quality
+1. **Table Management**: Creates and drops tables as needed with proper error handling
 2. **Dimension Creation**: Builds shared dimensional tables for consistent analysis
 3. **Fact Table Population**: Creates fact tables with appropriate relationships
 4. **Index Creation**: Establishes spatial and conventional indexes for query performance
