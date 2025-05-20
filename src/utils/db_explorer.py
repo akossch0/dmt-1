@@ -75,8 +75,9 @@ def main():
         "dim_year",
         "dim_month",
         "dim_location",
+        "dim_station",
         "fact_station_information",
-        "fact_station_status",
+        "fact_population_income",
     ]
     
     # Explore each table
