@@ -78,7 +78,7 @@ SELECT
     
     -- Flag districts with potential discrimination (high need, low service)
     CASE 
-        -- Fair Distribution: within ±10% of city averages for both income and capacity
+        -- Fair Distribution: within +-10% of city averages for both income and capacity
         WHEN lym.avg_income BETWEEN ca.avg_city_income * 0.9 AND ca.avg_city_income * 1.1 
              AND lym.capacity_per_1000_inhabitants_per_sqkm BETWEEN ca.avg_city_capacity_density * 0.9 AND ca.avg_city_capacity_density * 1.1
         THEN 'Fair Distribution'

@@ -2,6 +2,14 @@
 
 Urban infrastructure planning and analysis for Barcelona's Bicing service
 
+## Documentation
+
+Detailed documentation for each project component:
+
+- [Data Preprocessing](src/preprocessing/README.md) - Data cleaning, transformation, and preparation workflows
+- [Data Integration](src/integration/README.md) - Integration strategy and component descriptions
+- [Key Performance Indicators](src/kpi/README.md) - Metrics and SQL queries for performance analysis
+
 ## Project Structure
 
 ```
